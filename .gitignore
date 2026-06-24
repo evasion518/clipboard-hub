@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.manifest
+*.spec.*
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PyInstaller
+*.spec.bak
+
+# Environment
+.env
+.env.local
+
+# Reasonix / Agent artifacts
+.agents/
+.superpowers/
+
+# Database (local user data, don't commit)
+*.db
+*.db-wal
+*.db-shm
