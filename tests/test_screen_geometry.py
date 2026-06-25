@@ -172,7 +172,7 @@ def test_tab_bar_tracks_current_panel_position(qapp, monkeypatch):
 
 
 def test_tab_bar_refreshes_theme_when_system_color_scheme_changes(qapp, monkeypatch):
-    from src import tab_bar as tab_bar_module
+    from src.ui import tab_bar as tab_bar_module
 
     light_theme = object()
     dark_theme = object()
@@ -197,7 +197,7 @@ def test_tab_bar_refreshes_theme_when_system_color_scheme_changes(qapp, monkeypa
 
 
 def test_tab_bar_uses_explicit_theme_mode_when_provided(qapp, monkeypatch):
-    from src import tab_bar as tab_bar_module
+    from src.ui import tab_bar as tab_bar_module
 
     light_theme = object()
     dark_theme = object()

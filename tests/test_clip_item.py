@@ -42,7 +42,6 @@ def test_create_accepts_non_empty_html_even_when_plain_text_preview_is_empty(htm
     item = ClipItem.create(html=html)
 
     assert item.html == html
-    assert item.type == "html"
     assert item.size_bytes == len(html.encode("utf-8"))
 
 
@@ -61,18 +60,18 @@ def test_create_without_non_empty_payload_raises_value_error(kwargs):
         ClipItem.create(**kwargs)
 
 
-def test_legacy_type_and_content_skip_empty_leading_payloads():
+def test_create_skips_empty_leading_payloads():
     item = ClipItem.create(text="   ", html="<b>fallback</b>")
 
-    assert item.type == "html"
-    assert item.content == "<b>fallback</b>"
+    assert item.text is None
+    assert item.html == "<b>fallback</b>"
 
 
 def test_empty_present_fields_do_not_change_identity():
     base = ClipItem.create(text="hello")
     with_empty_fields = ClipItem.create(text="hello", html="", image_png=b"")
 
-    assert with_empty_fields.type == "text"
-    assert with_empty_fields.content == "hello"
+    assert with_empty_fields.text == "hello"
+    assert with_empty_fields.html is None
     assert with_empty_fields.size_bytes == base.size_bytes
     assert with_empty_fields.content_hash == base.content_hash

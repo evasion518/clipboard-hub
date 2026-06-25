@@ -5,6 +5,7 @@ from .sqlite_repository import SQLiteRepository
 
 
 class ClipboardStore(QObject):
+    item_added = Signal(object)
     items_changed = Signal()
 
     def __init__(
@@ -34,6 +35,7 @@ class ClipboardStore(QObject):
         self._total_bytes += item.size_bytes
 
         self._enforce_retention_limits()
+        self.item_added.emit(item)
         self.items_changed.emit()
         return True
 
@@ -50,6 +52,17 @@ class ClipboardStore(QObject):
             return True
 
         return False
+
+    def clear(self) -> bool:
+        if not self._items:
+            return False
+
+        self._items.clear()
+        self._total_bytes = 0
+        if self._repository is not None:
+            self._repository.clear()
+        self.items_changed.emit()
+        return True
 
     def get_all(self) -> list[ClipItem]:
         return list(self._items)
@@ -77,9 +90,6 @@ class ClipboardStore(QObject):
             if item.id == item_id:
                 return item
         return None
-
-    def re_copy(self, item_id: str):
-        return self.get_by_id(item_id)
 
     def _enforce_retention_limits(self) -> None:
         while len(self._items) > self._max_items:

@@ -1,36 +1,9 @@
-from PySide6.QtCore import QBuffer, QIODevice, QMimeData
-from PySide6.QtGui import QImage
+from PySide6.QtCore import QMimeData
 
 from src.clip_item import ClipItem, strip_html
 
 
 class ClipboardCodec:
-    MAX_IMAGE_BYTES = 10 * 1024 * 1024
-
-    @staticmethod
-    def image_to_png(image) -> bytes | None:
-        if image is None:
-            return None
-
-        if isinstance(image, QImage):
-            qimage = image
-        else:
-            qimage = QImage(image)
-
-        if qimage.isNull():
-            return None
-
-        buffer = QBuffer()
-        if not buffer.open(QIODevice.OpenModeFlag.WriteOnly):
-            return None
-        if not qimage.save(buffer, "PNG"):
-            return None
-
-        data = bytes(buffer.data())
-        if not data or len(data) > ClipboardCodec.MAX_IMAGE_BYTES:
-            return None
-        return data
-
     @staticmethod
     def decode(
         mime: QMimeData,

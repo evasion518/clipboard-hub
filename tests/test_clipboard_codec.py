@@ -1,16 +1,9 @@
-from PySide6.QtCore import QBuffer, QIODevice, QUrl
+from PySide6.QtCore import QUrl
 from PySide6.QtGui import QImage
 from PySide6.QtCore import QMimeData
 
 from src.clip_item import ClipItem
 from src.clipboard_codec import ClipboardCodec
-
-
-def _png_bytes(image: QImage) -> bytes:
-    buffer = QBuffer()
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    assert image.save(buffer, "PNG")
-    return bytes(buffer.data())
 
 
 def test_decode_preserves_text_and_html_but_ignores_images(qapp):
@@ -38,14 +31,9 @@ def test_decode_preserves_text_and_html_but_ignores_images(qapp):
 
 
 def test_encode_restores_only_plain_text(qapp):
-    image = QImage(4, 1, QImage.Format.Format_ARGB32)
-    image.fill(0xFFFF0000)
-    png_bytes = _png_bytes(image)
     item = ClipItem.create(
         text="plain text",
         html="<div>rich text</div>",
-        image_png=png_bytes,
-        image_size=(4, 1),
     )
 
     mime = ClipboardCodec.encode(item)
@@ -76,11 +64,6 @@ def test_decode_returns_none_for_effectively_empty_text_and_html(qapp):
     assert ClipboardCodec.decode(mime) is None
 
 
-def test_image_to_png_returns_none_for_none_and_null_image(qapp):
-    assert ClipboardCodec.image_to_png(None) is None
-    assert ClipboardCodec.image_to_png(QImage()) is None
-
-
 def test_decode_ignores_png_bytes_but_keeps_other_formats(qapp):
     mime = QMimeData()
     mime.setText("hello")
@@ -103,40 +86,6 @@ def test_decode_returns_none_for_image_only_clipboard(qapp):
     mime.setImageData(image)
 
     assert ClipboardCodec.decode(mime) is None
-
-
-def test_image_to_png_enforces_max_image_bytes(qapp):
-    image = QImage(4, 4, QImage.Format.Format_ARGB32)
-    image.fill(0xFF123456)
-    original_limit = ClipboardCodec.MAX_IMAGE_BYTES
-    ClipboardCodec.MAX_IMAGE_BYTES = 1
-    try:
-        assert ClipboardCodec.image_to_png(image) is None
-    finally:
-        ClipboardCodec.MAX_IMAGE_BYTES = original_limit
-
-
-def test_decode_drops_oversized_png_payload_but_preserves_text_and_html(qapp):
-    image = QImage(4, 4, QImage.Format.Format_ARGB32)
-    image.fill(0xFFABCDEF)
-    png_bytes = _png_bytes(image)
-    mime = QMimeData()
-    mime.setText("plain")
-    mime.setHtml("<b>plain</b>")
-    mime.setData("image/png", png_bytes)
-
-    original_limit = ClipboardCodec.MAX_IMAGE_BYTES
-    ClipboardCodec.MAX_IMAGE_BYTES = len(png_bytes) - 1
-    try:
-        item = ClipboardCodec.decode(mime)
-    finally:
-        ClipboardCodec.MAX_IMAGE_BYTES = original_limit
-
-    assert item is not None
-    assert item.text == "plain"
-    assert item.html == "<b>plain</b>"
-    assert item.image_png is None
-    assert item.image_size is None
 
 
 def test_decode_file_urls_as_plain_text_paths(qapp):
@@ -174,22 +123,12 @@ def test_decode_prefers_explicit_text_over_file_urls(qapp):
 
 
 def test_encode_skips_html_and_image_payloads(qapp):
-    image = QImage(4, 4, QImage.Format.Format_ARGB32)
-    image.fill(0xFF445566)
-    png_bytes = _png_bytes(image)
     item = ClipItem.create(
         text="plain text",
         html="<div>rich text</div>",
-        image_png=png_bytes,
-        image_size=(4, 4),
     )
 
-    original_limit = ClipboardCodec.MAX_IMAGE_BYTES
-    ClipboardCodec.MAX_IMAGE_BYTES = len(png_bytes) - 1
-    try:
-        mime = ClipboardCodec.encode(item)
-    finally:
-        ClipboardCodec.MAX_IMAGE_BYTES = original_limit
+    mime = ClipboardCodec.encode(item)
 
     assert mime.hasText()
     assert not mime.hasHtml()

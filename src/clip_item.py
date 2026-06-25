@@ -112,21 +112,7 @@ class ClipItem:
         timestamp: float | None = None,
         content_hash: str | None = None,
         size_bytes: int | None = None,
-        type: str | None = None,
-        content: str | bytes | None = None,
-        app_source: str | None = None,
     ):
-        if type is not None or content is not None or app_source is not None:
-            text, html, image_png, source_app = self._coerce_legacy_inputs(
-                text=text,
-                html=html,
-                image_png=image_png,
-                source_app=source_app,
-                type=type,
-                content=content,
-                app_source=app_source,
-            )
-
         text, html, image_png = _normalize_payloads(text=text, html=html, image_png=image_png)
 
         if not _has_meaningful_payload(text=text, html=html, image_png=image_png):
@@ -143,28 +129,6 @@ class ClipItem:
         object.__setattr__(self, "timestamp", time.time() if timestamp is None else timestamp)
         object.__setattr__(self, "content_hash", content_hash or _hash_payloads(text=text, html=html, image_png=image_png))
         object.__setattr__(self, "size_bytes", _payload_size(text=text, html=html, image_png=image_png) if size_bytes is None else size_bytes)
-
-    @staticmethod
-    def _coerce_legacy_inputs(
-        *,
-        text: str | None,
-        html: str | None,
-        image_png: bytes | None,
-        source_app: str,
-        type: str | None,
-        content: str | bytes | None,
-        app_source: str | None,
-    ) -> tuple[str | None, str | None, bytes | None, str]:
-        if text is None and html is None and image_png is None and type is not None:
-            if type == "text":
-                text = content if isinstance(content, str) else None
-            elif type == "html":
-                html = content if isinstance(content, str) else None
-            elif type == "image":
-                image_png = content if isinstance(content, bytes) else None
-        if app_source is not None:
-            source_app = app_source
-        return text, html, image_png, source_app
 
     @classmethod
     def create(
@@ -191,23 +155,3 @@ class ClipItem:
             id=id,
             timestamp=timestamp,
         )
-
-    @property
-    def type(self) -> str:
-        if self.text is not None:
-            return "text"
-        if self.html is not None:
-            return "html"
-        return "image"
-
-    @property
-    def content(self) -> str | bytes:
-        if self.text is not None:
-            return self.text
-        if self.html is not None:
-            return self.html
-        return self.image_png or b""
-
-    @property
-    def app_source(self) -> str:
-        return self.source_app

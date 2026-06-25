@@ -1,9 +1,13 @@
+import logging
+
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication
 
 from .clipboard_codec import ClipboardCodec
 from .clipboard_store import ClipboardStore
 from .source_app import SourceAppProvider
+
+logger = logging.getLogger("clipboard_hub")
 
 
 class ClipboardWatcher(QObject):
@@ -63,6 +67,7 @@ class ClipboardWatcher(QObject):
             self.last_exception = None
         except (RuntimeError, OSError, AttributeError, ValueError) as exc:
             self.last_exception = exc
+            logger.warning("Clipboard poll failed", exc_info=True)
 
     def notify_self_copy(self, content_hash: str):
         self.pending_self_hash = content_hash

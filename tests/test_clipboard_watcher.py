@@ -201,3 +201,20 @@ def test_poll_records_last_exception_when_recovering_from_error(qapp):
 
     assert isinstance(watcher.last_exception, ValueError)
     assert str(watcher.last_exception) == "clipboard unavailable"
+
+
+def test_poll_logs_clipboard_failure_without_clipboard_content(qapp, caplog):
+    store = ClipboardStore()
+    watcher = ClipboardWatcher(
+        store,
+        clipboard=RaisingClipboard(),
+        source_provider=FakeSourceProvider(),
+        autostart=False,
+    )
+
+    with caplog.at_level("WARNING", logger="clipboard_hub"):
+        watcher.poll()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Clipboard poll failed" in messages
+    assert all("same clipboard content" not in message for message in messages)

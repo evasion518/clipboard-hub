@@ -198,6 +198,21 @@ def test_clipboard_hub_uses_recovery_opened_repository_for_store(monkeypatch, pa
     assert calls == [("open", db_path), ("store", repository)]
 
 
+def test_clipboard_hub_logs_startup_and_database_path(monkeypatch, patched_main, tmp_path, caplog):
+    db_path = tmp_path / "hub.db"
+
+    monkeypatch.setattr(main_module.SQLiteRepository, "open_with_recovery", staticmethod(lambda path: object()))
+    monkeypatch.setattr(main_module, "ClipboardStore", lambda *, repository=None, **_kwargs: object())
+    monkeypatch.setattr(main_module, "_default_database_path", lambda: db_path)
+
+    with caplog.at_level("INFO", logger="clipboard_hub"):
+        main_module.ClipboardHub()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Clipboard Hub starting" in messages
+    assert f"Using database at {db_path}" in messages
+
+
 def test_clipboard_hub_configures_qt_application_identity(monkeypatch, patched_main, tmp_path):
     repository = object()
 
@@ -472,3 +487,15 @@ def test_shutdown_closes_repository_if_checkpoint_raises_and_stays_idempotent(mo
 
     hub.shutdown()
     assert calls == ["watcher.stop", "repo.checkpoint", "repo.close"]
+
+
+def test_clipboard_hub_does_not_store_unused_panel_position(monkeypatch, patched_main, tmp_path):
+    monkeypatch.setattr(main_module.SQLiteRepository, "open_with_recovery", staticmethod(lambda path: object()))
+    monkeypatch.setattr(main_module, "ClipboardStore", lambda *, repository=None, **_kwargs: object())
+    monkeypatch.setattr(main_module, "ClipboardWatcher", lambda store: object())
+    monkeypatch.setattr(main_module, "_default_database_path", lambda: tmp_path / "hub.db")
+
+    hub = main_module.ClipboardHub()
+    hub._on_tab_moved(10, 20)
+
+    assert not hasattr(hub, "_panel_position")

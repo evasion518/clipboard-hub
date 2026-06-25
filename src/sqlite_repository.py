@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
+import logging
 from datetime import datetime
 from pathlib import Path
 
 from .clip_item import ClipItem
+
+logger = logging.getLogger("clipboard_hub")
 
 
 SCHEMA = """
@@ -37,6 +40,7 @@ class SQLiteRepository:
         connection = sqlite3.connect(self.path)
         try:
             connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(SCHEMA)
             connection.commit()
         except Exception:
@@ -53,43 +57,48 @@ class SQLiteRepository:
             backup_path = db_path.with_name(f"{db_path.name}.corrupt-{_timestamp_suffix()}")
             if db_path.exists():
                 db_path.replace(backup_path)
+                logger.warning("Database recovery created backup at %s", backup_path, exc_info=True)
             return cls(db_path)
 
     def insert(self, item: ClipItem) -> None:
-        image_width, image_height = _split_image_size(item.image_size)
-        with self._connection:
-            self._connection.execute(
-                """
-                INSERT OR REPLACE INTO clipboard_items (
-                    id,
-                    text_content,
-                    html_content,
-                    image_png,
-                    image_width,
-                    image_height,
-                    preview,
-                    created_at,
-                    source_app,
-                    source_window,
-                    content_hash,
-                    size_bytes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    item.id,
-                    item.text,
-                    item.html,
-                    item.image_png,
-                    image_width,
-                    image_height,
-                    item.preview,
-                    item.timestamp,
-                    item.source_app,
-                    item.source_window,
-                    item.content_hash,
-                    item.size_bytes,
-                ),
-            )
+        try:
+            image_width, image_height = _split_image_size(item.image_size)
+            with self._connection:
+                self._connection.execute(
+                    """
+                    INSERT OR REPLACE INTO clipboard_items (
+                        id,
+                        text_content,
+                        html_content,
+                        image_png,
+                        image_width,
+                        image_height,
+                        preview,
+                        created_at,
+                        source_app,
+                        source_window,
+                        content_hash,
+                        size_bytes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        item.id,
+                        item.text,
+                        item.html,
+                        item.image_png,
+                        image_width,
+                        image_height,
+                        item.preview,
+                        item.timestamp,
+                        item.source_app,
+                        item.source_window,
+                        item.content_hash,
+                        item.size_bytes,
+                    ),
+                )
+        except Exception:
+            logger.error("SQLite write failed", exc_info=True)
+            raise
 
     def delete(self, item_id: str) -> bool:
         with self._connection:
@@ -99,19 +108,10 @@ class SQLiteRepository:
             )
         return cursor.rowcount > 0
 
-    def delete_oldest(self) -> str | None:
-        row = self._connection.execute(
-            """
-            SELECT id
-            FROM clipboard_items
-            ORDER BY created_at ASC, rowid ASC
-            LIMIT 1
-            """
-        ).fetchone()
-        if row is None:
-            return None
-        self.delete(row[0])
-        return str(row[0])
+    def clear(self) -> bool:
+        with self._connection:
+            cursor = self._connection.execute("DELETE FROM clipboard_items")
+        return cursor.rowcount > 0
 
     def load_all(self) -> list[ClipItem]:
         rows = self._connection.execute(
@@ -149,15 +149,6 @@ class SQLiteRepository:
             )
             for row in rows
         ]
-
-    def totals(self) -> tuple[int, int]:
-        count, size_bytes = self._connection.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(size_bytes), 0)
-            FROM clipboard_items
-            """
-        ).fetchone()
-        return int(count), int(size_bytes)
 
     def checkpoint(self) -> None:
         self._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")

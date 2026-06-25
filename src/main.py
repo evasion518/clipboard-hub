@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
@@ -14,6 +15,7 @@ from .tab_bar import TabBar
 
 APP_ORGANIZATION = "Greasionix"
 APP_NAME = "Clipboard Hub"
+logger = logging.getLogger("clipboard_hub")
 
 
 def _configure_application_identity(app=None) -> None:
@@ -50,10 +52,12 @@ def _default_database_path() -> Path:
 
 class ClipboardHub:
     def __init__(self, db_path: str | Path | None = None):
+        logger.info("Clipboard Hub starting")
         _configure_application_identity()
         self._shutdown_complete = False
-        self._panel_position: tuple[int, int] | None = None
-        self._repository = SQLiteRepository.open_with_recovery(db_path or _default_database_path())
+        database_path = db_path or _default_database_path()
+        logger.info("Using database at %s", database_path)
+        self._repository = SQLiteRepository.open_with_recovery(database_path)
         self._store = ClipboardStore(repository=self._repository)
         self._watcher = ClipboardWatcher(self._store)
         self._tab = TabBar()
@@ -91,6 +95,7 @@ class ClipboardHub:
             self._repository.checkpoint()
         finally:
             self._repository.close()
+            logger.info("Clipboard Hub shutdown complete")
 
     def _quiesce_watcher(self):
         stop = getattr(self._watcher, "stop", None)
@@ -107,7 +112,6 @@ class ClipboardHub:
         self._panel.show_at(*self._tab.current_panel_position())
 
     def _on_tab_moved(self, x: int, y: int):
-        self._panel_position = (x, y)
         if self._panel.isVisible():
             self._panel.move(x, y)
 

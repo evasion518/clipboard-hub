@@ -27,7 +27,16 @@ def test_round_trip_insert_load_all_close_reopen(tmp_path):
         reopened.close()
 
 
-def test_delete_and_totals(tmp_path):
+def test_repository_uses_wal_with_normal_synchronous_for_low_latency(tmp_path):
+    repo = SQLiteRepository(tmp_path / "clipboard.db")
+    try:
+        assert repo._connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        assert repo._connection.execute("PRAGMA synchronous").fetchone()[0] == 1
+    finally:
+        repo.close()
+
+
+def test_delete(tmp_path):
     repo = SQLiteRepository(tmp_path / "clipboard.db")
     try:
         first = ClipItem.create(text="a", id="first", timestamp=1.0)
@@ -36,28 +45,22 @@ def test_delete_and_totals(tmp_path):
         repo.insert(first)
         repo.insert(second)
 
-        assert repo.totals() == (2, first.size_bytes + second.size_bytes)
-
         repo.delete(first.id)
 
         assert repo.load_all() == [second]
-        assert repo.totals() == (1, second.size_bytes)
     finally:
         repo.close()
 
 
-def test_delete_oldest(tmp_path):
+def test_clear_deletes_all_items(tmp_path):
     repo = SQLiteRepository(tmp_path / "clipboard.db")
     try:
-        oldest = ClipItem.create(text="old", id="oldest", timestamp=1.0)
-        newest = ClipItem.create(text="new", id="newest", timestamp=2.0)
+        repo.insert(ClipItem.create(text="a", id="first", timestamp=1.0))
+        repo.insert(ClipItem.create(text="bb", id="second", timestamp=2.0))
 
-        repo.insert(oldest)
-        repo.insert(newest)
+        repo.clear()
 
-        assert repo.delete_oldest() == oldest.id
-        assert repo.load_all() == [newest]
-        assert repo.totals() == (1, newest.size_bytes)
+        assert repo.load_all() == []
     finally:
         repo.close()
 
@@ -69,10 +72,38 @@ def test_open_with_recovery_backs_up_corrupt_database_and_returns_empty_repo(tmp
     repo = SQLiteRepository.open_with_recovery(path)
     try:
         assert repo.load_all() == []
-        assert repo.totals() == (0, 0)
     finally:
         repo.close()
 
     backups = list(tmp_path.glob("clipboard.db.corrupt-*"))
     assert len(backups) == 1
     assert backups[0].read_bytes() == b"not a sqlite database"
+
+
+def test_open_with_recovery_logs_database_recovery(tmp_path, caplog):
+    path = tmp_path / "clipboard.db"
+    path.write_bytes(b"not a sqlite database")
+
+    with caplog.at_level("WARNING", logger="clipboard_hub"):
+        repo = SQLiteRepository.open_with_recovery(path)
+    try:
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(message.startswith("Database recovery created backup at ") for message in messages)
+    finally:
+        repo.close()
+
+
+def test_insert_logs_sqlite_write_failure(tmp_path, caplog):
+    repo = SQLiteRepository(tmp_path / "clipboard.db")
+    item = ClipItem.create(text="do not log this", id="item-1")
+    repo.close()
+
+    with caplog.at_level("ERROR", logger="clipboard_hub"):
+        try:
+            repo.insert(item)
+        except Exception:
+            pass
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "SQLite write failed" in messages
+    assert all("do not log this" not in message for message in messages)

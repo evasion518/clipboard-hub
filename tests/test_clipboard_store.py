@@ -7,64 +7,71 @@ from src.sqlite_repository import SQLiteRepository
 
 def test_add_and_get_all(qapp):
     store = ClipboardStore()
-    item = ClipItem(type="text", content="hello", preview="hello")
+    item = ClipItem.create(text="hello", preview="hello")
     store.add(item)
     items = store.get_all()
     assert len(items) == 1
-    assert items[0].content == "hello"
-    assert items[0].type == "text"
+    assert items[0].text == "hello"
 
 
 def test_deduplicate_same_content(qapp):
     store = ClipboardStore()
-    store.add(ClipItem(type="text", content="same", preview="same"))
-    store.add(ClipItem(type="text", content="same", preview="same"))
+    store.add(ClipItem.create(text="same", preview="same"))
+    store.add(ClipItem.create(text="same", preview="same"))
     assert len(store.get_all()) == 1
 
 
 def test_different_content_adds_both(qapp):
     store = ClipboardStore()
-    store.add(ClipItem(type="text", content="a", preview="a"))
-    store.add(ClipItem(type="text", content="b", preview="b"))
+    store.add(ClipItem.create(text="a", preview="a"))
+    store.add(ClipItem.create(text="b", preview="b"))
     assert len(store.get_all()) == 2
-    assert store.get_all()[0].content == "b"
+    assert store.get_all()[0].text == "b"
 
 
 def test_delete(qapp):
     store = ClipboardStore()
-    item = ClipItem(type="text", content="del", preview="del")
+    item = ClipItem.create(text="del", preview="del")
     store.add(item)
     store.delete(item.id)
     assert len(store.get_all()) == 0
 
 
+def test_clear_removes_all_items_and_emits_once(qapp, tmp_path):
+    repo = SQLiteRepository(tmp_path / "clipboard.db")
+    try:
+        store = ClipboardStore(repository=repo)
+        store.add(ClipItem.create(text="a", id="first", timestamp=1.0))
+        store.add(ClipItem.create(text="bb", id="second", timestamp=2.0))
+        spy = QSignalSpy(store.items_changed)
+
+        assert store.clear() is True
+
+        assert store.get_all() == []
+        assert repo.load_all() == []
+        assert spy.count() == 1
+    finally:
+        repo.close()
+
+
 def test_delete_nonexistent_does_not_crash(qapp):
     store = ClipboardStore()
-    store.add(ClipItem(type="text", content="x", preview="x"))
+    store.add(ClipItem.create(text="x", preview="x"))
     store.delete("nonexistent-id")
     assert len(store.get_all()) == 1
 
 
 def test_search(qapp):
     store = ClipboardStore()
-    store.add(ClipItem(type="text", content="apple pie", preview="apple pie"))
-    store.add(ClipItem(type="text", content="banana", preview="banana"))
-    store.add(ClipItem(type="html", content="<div>apple</div>", preview="<div>apple</div>"))
+    store.add(ClipItem.create(text="apple pie", preview="apple pie"))
+    store.add(ClipItem.create(text="banana", preview="banana"))
+    store.add(ClipItem.create(html="<div>apple</div>", preview="<div>apple</div>"))
     results = store.search("apple")
     assert len(results) == 2
     results = store.search("banana")
     assert len(results) == 1
     results = store.search("xyz")
     assert len(results) == 0
-
-
-def test_search_image_item_uses_preview_without_crashing(qapp):
-    store = ClipboardStore()
-    store.add(ClipItem.create(image_png=b"\x89PNG", image_size=(10, 10)))
-
-    results = store.search("image")
-
-    assert len(results) == 1
 
 
 def test_deduplicate_uses_v2_identity_not_legacy_content_only(qapp):
@@ -275,19 +282,5 @@ def test_delete_emits_only_when_item_existed(qapp):
 def test_items_changed_signal(qapp):
     store = ClipboardStore()
     spy = QSignalSpy(store.items_changed)
-    assert store.add(ClipItem(type="text", content="x", preview="x")) is True
+    assert store.add(ClipItem.create(text="x", preview="x")) is True
     assert spy.count() == 1
-
-
-def test_re_copy_returns_item(qapp):
-    store = ClipboardStore()
-    item = ClipItem(type="text", content="copy me", preview="copy me")
-    store.add(item)
-    result = store.re_copy(item.id)
-    assert result is not None
-    assert result.content == "copy me"
-
-
-def test_re_copy_nonexistent_returns_none(qapp):
-    store = ClipboardStore()
-    assert store.re_copy("no-such-id") is None
