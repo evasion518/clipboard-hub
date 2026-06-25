@@ -1,39 +1,67 @@
-# Clipboard Hub
+# Clipboard Hub v2
 
-Windows 桌面剪贴板历史工具。程序会轮询系统剪贴板，记录文本、HTML 和文件路径文本；鼠标悬停右上角 TabBar 可展开历史面板，点击条目可按纯文本重新写回剪贴板。
+Windows 桌面剪贴板历史工具。系统托盘常驻，轮询系统剪贴板并记录文本、HTML 和文件路径；鼠标悬停屏幕右上角 TabBar 展开历史面板，支持搜索、复制、删除。
 
-## 运行
+## 快速开始
+
+### 直接运行
+
+下载 [最新 Release](https://github.com/evasion518/clipboard-hub/releases/latest) 中的 `Clipboard-Hub-v2.zip`，解压后双击 `Clipboard Hub.exe` 即可，无需安装 Python。
+
+### 从源码运行
 
 ```bash
 pip install -r requirements.txt
 python -m src.main
 ```
 
-## 打包为可执行文件
+### 打包为可执行文件
 
 ```bash
 pip install pyinstaller
 pyinstaller clipboard_hub_launcher.spec
 ```
 
-输出在 `dist/Clipboard Hub/` 目录，双击 `Clipboard Hub.exe` 即可运行。整个文件夹 (约 153 MB) 可直接分发给其他 Windows 用户，无需安装 Python。
+输出在 `dist/Clipboard Hub/`，整个文件夹可直接分发。
+
+## v2 更新内容
+
+### 架构重构
+- UI 层拆分为独立模块：`geometry` / `history_card` / `history_list` / `history_panel` / `tab_bar` / `theme`
+- 历史列表改为 `QPainter` delegate 自绘渲染，性能显著提升，不再为每条记录创建独立 Widget
+- 新增 `SourceAppProvider`，通过 Win32 API 采集前台应用名和窗口标题
+- `ClipboardCodec` 解码/编码分离，支持自复制去重（self-copy detection）
+- `ClipboardStore` 增加 `items_changed` 信号，容量/字节数双重保留策略
+
+### 主题系统
+- 明 (`LIGHT_THEME`) / 暗 (`DARK_THEME`) / 跟随系统 (`system`) 三模式
+- 冷白微蓝玻璃态面板 + 柔和渐变边框
+- 复制反馈标签（成功 `已复制` / 失败 `复制失败`）短暂显示后自动消失
+
+### 数据库
+- SQLite WAL 模式 + `synchronous=NORMAL`，低延迟写入
+- `open_with_recovery` 工厂方法：检测到损坏时自动备份并重建
+- 退出时执行 `wal_checkpoint(TRUNCATE)`，保证下次启动可正常恢复
+
+### 测试
+- 140 个测试用例，覆盖 ClipItem / Codec / Store / Watcher / HistoryPanel / Main / Geometry / SQLiteRepository
+- 使用 QSignalSpy 验证 Qt 信号行为
+- 使用 monkeypatch 隔离外部依赖（QApplication、Clipboard API、文件系统）
 
 ## 当前实现
 
-- 使用 SQLite 持久化历史记录，启动时自动恢复。
-- 单条记录可保存 `text/plain` 和 `text/html`；文件剪贴板会显示为本地路径文本。
-- 历史保留策略为最多 1000 条、总内容大小最多 200 MiB。
-- 图片剪贴板不再作为图片入库，也不会作为图片写回；如果剪贴板内容是文件，则显示文件路径。
-- 通过 Windows 前台窗口 API 采集来源应用名和窗口标题；失败时记为 `unknown`。
-- TabBar 可拖动，松手 600ms 后吸附到其当前所在屏幕的右上角。
-- 历史面板支持搜索、逐条直接删除、重新复制、一键删除全部历史，以及成功/失败短暂视觉反馈。
-- 一键删除按钮位于搜索框和历史列表之间，点击后需要确认；单条删除不再弹确认框。
-- 当前界面已按“冷白微蓝 / iOS 透明玻璃 / 紧凑文本列表”方向做过一轮美化，历史项采用紧凑复制框、倒序序号、两行渐隐、柔和分割线和等高删除按钮，复制后会显示 `已复制`，鼠标移出面板后可正常收回。
-- 退出时执行 SQLite WAL checkpoint，正常重启后可恢复历史。
+- SQLite 持久化，最多 1000 条 / 200 MiB，超出自动淘汰最旧记录。
+- 支持 `text/plain`、`text/html`、文件路径（URL 列表转为路径文本）。
+- 图片剪贴板不作为图片入库/写回。
+- 去重：连续相同内容指纹（SHA-256）只保留一条；非连续重复仍保留。
+- TabBar 可拖动，松手 600ms 后吸附到当前屏幕右上角。
+- 历史面板固定 `420×520`，显示最近 24 条，支持搜索过滤。
+- 单条删除直接生效，一键删除全部需确认。
+- 鼠标移出面板自动收起。
 
 ## 持久化位置
 
-默认数据库文件名为 `clipboard_hub.db`。路径按以下顺序解析：
+默认数据库 `clipboard_hub.db`，路径解析顺序：
 
 1. `QStandardPaths.AppDataLocation`
 2. `QStandardPaths.GenericDataLocation / Clipboard Hub`
@@ -41,7 +69,7 @@ pyinstaller clipboard_hub_launcher.spec
 4. `XDG_DATA_HOME/clipboard-hub`
 5. `~/.local/share/clipboard-hub`
 
-在常见 Windows 环境下，通常会落在类似下面的位置：
+Windows 下通常在：
 
 ```text
 C:\Users\<User>\AppData\Roaming\Clipboard Hub\clipboard_hub.db
@@ -49,25 +77,18 @@ C:\Users\<User>\AppData\Roaming\Clipboard Hub\clipboard_hub.db
 
 ## 已知限制
 
-- 目前只支持文本、HTML 和文件路径文本；不支持图片保存/写回、RTF、OCR、全局快捷键。
-- 去重只针对“连续两次内容指纹相同”的情况，非连续重复记录仍会保留。
-- 来源应用保存的是原始可执行文件名，例如 `Code.exe`、`chrome.exe`，未做更友好的名称映射；当前 UI 默认不展示来源应用或窗口标题，但搜索仍可命中这些字段。
-- TabBar 只在拖动释放后重新吸附；当前未监听显示器热插拔或分辨率变化事件。
-- HistoryPanel 当前为固定 `420×520`，不会按屏幕高度动态缩放，也没有展开/收起动画。
-- 主题默认走 `system`，会跟随系统深浅主题；但当前视觉设计重点仍优先围绕浅色主题打磨。
+- 仅支持文本、HTML 和文件路径；不支持图片保存/写回、RTF、OCR、全局快捷键。
+- 去重仅针对连续相同内容指纹，非连续重复仍保留。
+- 来源应用保存为原始可执行文件名（如 `Code.exe`），未做友好映射。
+- TabBar 仅在拖动释放后吸附，未监听显示器热插拔或分辨率变化。
+- 面板固定 `420×520`，无自适应缩放或展开动画。
 
-## 设计偏好档案
+## 设计文档
 
-如果后续还要继续做界面美化或保持同一风格，请先看这份档案：
-
-- [docs/preferences/2026-06-24-ui-style-profile.md](/D:/Greasionix/clipboard-hub/docs/preferences/2026-06-24-ui-style-profile.md)
-
-里面记录了这次界面迭代里确认过的审美方向、组件偏好、文案风格和实现边界，方便后续直接延续同一种做法。
-
-后续产品化改进路线记录在 V2 设计文档中：
-
-- [docs/specs/2026-06-23-clipboard-hub-v2-design.md](/D:/Greasionix/clipboard-hub/docs/specs/2026-06-23-clipboard-hub-v2-design.md)
+- [UI 风格档案](docs/preferences/2026-06-24-ui-style-profile.md)
+- [V2 设计文档](docs/specs/2026-06-23-clipboard-hub-v2-design.md)
+- [架构演进计划](docs/plans/2026-06-25-architecture-evolution-plan.md)
 
 ## 隐私提醒
 
-剪贴板历史可能包含密码、令牌、链接和私人内容。当前实现仅保存在本机 SQLite 中，不加密、不同步、也不会上传。
+剪贴板历史可能包含密码、令牌等敏感内容。所有数据仅保存在本机 SQLite 中，不加密、不同步、不上传。
